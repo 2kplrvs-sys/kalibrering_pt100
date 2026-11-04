@@ -1,5 +1,5 @@
-// Temperatursimulator – service worker. Øk versjonen når filene endres.
-const CACHE = 'temp-sim-v2';
+// Kalibrering av PT-100 – service worker. Øk versjonen når filene endres.
+const CACHE = 'kal-pt100-v1';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png',

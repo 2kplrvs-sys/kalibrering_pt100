@@ -1,8 +1,8 @@
-TEMPERATURSIMULATOR – PWA
+KALIBRERING AV PT-100 – PWA
 =========================
 
 Innhold:
-  index.html             selve simulatoren
+  index.html             kalibreringssimulatoren
   manifest.webmanifest   navn, ikon og farger for installert app
   sw.js                  service worker (gjør at appen virker uten nett)
   icons/                 app-ikoner
@@ -27,4 +27,10 @@ Installere:
 Etter første besøk virker appen også offline.
 
 Oppdatere: bytt ut filene og øk versjonen i sw.js
-(const CACHE = 'temp-sim-v2' -> 'temp-sim-v3'), så henter elevene ny versjon.
+(const CACHE = 'kal-pt100-v1' -> 'kal-pt100-v2'), så henter elevene ny versjon.
+
+Begge appene (temperatursimulatoren og kalibreringen) kan ligge på samme
+nettsted, i hver sin mappe, f.eks.:
+  https://<brukernavn>.github.io/<repo>/temperatur/
+  https://<brukernavn>.github.io/<repo>/kalibrering/
+De installeres da som to separate apper.
