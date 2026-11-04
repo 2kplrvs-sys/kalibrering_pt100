@@ -1,0 +1,30 @@
+TEMPERATURSIMULATOR – PWA
+=========================
+
+Innhold:
+  index.html             selve simulatoren
+  manifest.webmanifest   navn, ikon og farger for installert app
+  sw.js                  service worker (gjør at appen virker uten nett)
+  icons/                 app-ikoner
+  fonts/                 skrifttyper (lagret lokalt, ingen nettilgang trengs)
+
+En PWA må ligge på en webserver med https (eller localhost). Den kan ikke
+installeres ved å åpne index.html direkte fra disken.
+
+Enkleste måter å publisere på:
+  1) GitHub Pages: lag et repo, last opp alle filene (behold mappene),
+     Settings -> Pages -> Deploy from branch -> main / root.
+     Adressen blir https://<brukernavn>.github.io/<repo>/
+  2) Netlify Drop (app.netlify.com/drop): dra hele mappen inn i nettleseren.
+  3) Skolens/fylkets webserver eller Teams/SharePoint-nettsted som tillater
+     statiske filer.
+
+Installere:
+  - PC (Chrome/Edge): åpne adressen, klikk installer-ikonet i adressefeltet.
+  - Android (Chrome): meny -> «Installer app» / «Legg til på startsiden».
+  - iPad/iPhone (Safari): Del -> «Legg til på Hjem-skjerm».
+
+Etter første besøk virker appen også offline.
+
+Oppdatere: bytt ut filene og øk versjonen i sw.js
+(const CACHE = 'temp-sim-v2' -> 'temp-sim-v3'), så henter elevene ny versjon.

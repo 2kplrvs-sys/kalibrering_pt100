@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Temperatursimulator</title>
+<meta name="description" content="PID-regulering av lyspære med SSR, PT-100 og FlexTop – simulator for Vg2 kjemiprosess- og laboratoriefag.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#16191c">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Temp-sim">
+<style>
+@font-face{font-family:'Barlow';font-weight:400;font-style:normal;font-display:swap;src:url(fonts/barlow-latin-400-normal.woff2) format('woff2')}
+@font-face{font-family:'Barlow';font-weight:500;font-style:normal;font-display:swap;src:url(fonts/barlow-latin-500-normal.woff2) format('woff2')}
+@font-face{font-family:'Barlow';font-weight:600;font-style:normal;font-display:swap;src:url(fonts/barlow-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:500;font-style:normal;font-display:swap;src:url(fonts/barlow-condensed-latin-500-normal.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:600;font-style:normal;font-display:swap;src:url(fonts/barlow-condensed-latin-600-normal.woff2) format('woff2')}
+@font-face{font-family:'Barlow Condensed';font-weight:700;font-style:normal;font-display:swap;src:url(fonts/barlow-condensed-latin-700-normal.woff2) format('woff2')}
+@font-face{font-family:'Share Tech Mono';font-weight:400;font-style:normal;font-display:swap;src:url(fonts/share-tech-mono-latin-400-normal.woff2) format('woff2')}
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;font:14px system-ui,sans-serif}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<style>
+/* Layout: instrumentpanel – regulatorfront + trend øverst, levende blokkskjema i midten, innstillinger og SSR-kurve under */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --line:#cfd6de; --fg:#1c2530; --muted:#5c6976;
+  --heat:#d9820b; --pv:#d8342c; --sp:#1f9a4a; --out:#2f6fd0; --wire:#7a8794;
+  --lcd:#0e1114; --lcdfg:#e8ecef;
+  --f-disp:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Barlow",system-ui,sans-serif;
+  --f-num:"Share Tech Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12171c; --panel:#1b222a; --line:#2f3a45; --fg:#e4e9ee; --muted:#93a1ae;
+  --heat:#f0a032; --pv:#ff5a4f; --sp:#3fcf74; --out:#6aa2ff; --wire:#7f8d9a; --lcd:#07090b; --lcdfg:#e8ecef; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171c; --panel:#1b222a; --line:#2f3a45; --fg:#e4e9ee; --muted:#93a1ae;
+  --heat:#f0a032; --pv:#ff5a4f; --sp:#3fcf74; --out:#6aa2ff; --wire:#7f8d9a; --lcd:#07090b; --lcdfg:#e8ecef; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:18px}
+header h1{font-family:var(--f-disp);font-weight:700;font-size:2rem;letter-spacing:.02em;margin:0;text-wrap:balance}
+header p{margin:2px 0 0;color:var(--muted);max-width:70ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;min-width:0}
+.panel h2{font-family:var(--f-disp);font-weight:600;font-size:1.05rem;text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;color:var(--muted)}
+.top{display:grid;grid-template-columns:260px 1fr;gap:18px}
+@media (max-width:760px){.top{grid-template-columns:1fr}}
+
+/* Regulatorfront */
+.face{background:var(--lcd);color:var(--lcdfg);border-radius:10px;padding:14px;display:grid;gap:10px;border:1px solid #000}
+.face .brand{font-family:var(--f-disp);font-size:.8rem;letter-spacing:.2em;color:#8a96a2;display:flex;justify-content:space-between}
+.disp{font-family:var(--f-num);line-height:1;text-align:right}
+.disp .lbl{font-family:var(--f-disp);font-size:.75rem;letter-spacing:.12em;color:#8a96a2;text-align:left;display:block;margin-bottom:2px}
+#pvDisp{font-size:3.4rem;color:#ff4a3d;text-shadow:0 0 12px rgba(255,74,61,.35)}
+#spDisp{font-size:2.1rem;color:#43e07e;text-shadow:0 0 10px rgba(67,224,126,.3)}
+.bar{height:8px;background:#232a31;border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:#f0a032}
+.outrow{display:flex;justify-content:space-between;font-family:var(--f-num);font-size:.95rem;color:#c9d1d8}
+.leds{display:flex;gap:12px;font-family:var(--f-disp);font-size:.75rem;letter-spacing:.1em;color:#6b7783}
+.leds span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#333b43;margin-right:5px;vertical-align:1px}
+.leds .on.out::before{background:#f0a032;box-shadow:0 0 6px #f0a032}
+.leds .on.man::before{background:#43e07e;box-shadow:0 0 6px #43e07e}
+.leds .on.alm::before{background:#ff4a3d;box-shadow:0 0 6px #ff4a3d}
+.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.keys button{background:#2a323a;color:#dfe5ea;border:1px solid #3a444e;border-radius:5px;padding:7px 0;font-family:var(--f-disp);font-weight:600;font-size:.9rem;letter-spacing:.06em;cursor:pointer}
+.keys button:hover{background:#353f48}
+.keys button[aria-pressed="true"]{background:#3a4a3f;border-color:#43e07e;color:#bff5d2}
+
+/* Trend */
+.trendhead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:baseline}
+.legend{display:flex;gap:14px;font-size:.85rem;color:var(--muted)}
+.legend b{display:inline-block;width:14px;height:3px;vertical-align:4px;margin-right:5px}
+canvas{display:block;width:100%}
+#trend{height:300px}
+
+/* Blokkskjema */
+.diagram{overflow-x:auto}
+.diagram svg{display:block;min-width:820px;width:100%;height:auto}
+.diagram svg text{font-family:var(--f-body);fill:var(--fg)}
+.diagram svg .v{font-family:var(--f-num);font-size:15px}
+.diagram svg .cap{font-size:13px;fill:var(--muted)}
+
+/* Innstillinger */
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+@media (max-width:900px){.grid3{grid-template-columns:1fr}}
+.ctl{display:grid;gap:12px}
+.field{display:grid;gap:3px}
+.field label{display:flex;justify-content:space-between;font-weight:500;font-size:.92rem}
+.field label output{font-family:var(--f-num);color:var(--muted)}
+.field small{color:var(--muted);font-size:.8rem}
+input[type=range]{width:100%;accent-color:var(--out)}
+select,.btn{font:inherit;font-size:.92rem;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.btn{cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--out)}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+.check{display:flex;gap:8px;align-items:center;font-size:.92rem}
+:focus-visible{outline:2px solid var(--out);outline-offset:2px}
+
+.ssr{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:14px;align-items:start}
+@media (max-width:500px){.ssr{grid-template-columns:1fr}}
+#ssrChart{height:190px}
+table{border-collapse:collapse;font-size:.88rem;width:100%;font-variant-numeric:tabular-nums}
+th,td{border-bottom:1px solid var(--line);padding:4px 6px;text-align:right}
+th{font-family:var(--f-disp);font-weight:600;letter-spacing:.05em;color:var(--muted)}
+tr.hit td{color:var(--heat);font-weight:600}
+
+/* Riggen */
+.rig{padding:0;overflow:hidden}
+.rig .scene{overflow-x:auto;background:#c9ced3}
+.rig svg{display:block;width:100%;min-width:640px;height:auto}
+.rig .bar2{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--line)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{font:inherit;font-size:.88rem;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--panel);border-color:var(--fg)}
+.rkey{cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.rkey rect{fill:#2a323a;stroke:#4a555f;stroke-width:1}
+.rkey text{fill:#e3e8ec;pointer-events:none;user-select:none}
+.rkey:hover rect{fill:#36414b}
+.rkey.down rect{fill:#4a5866;stroke:#43e07e}
+.rkey:focus-visible rect{stroke:#43e07e;stroke-width:2.5}
+svg [hidden]{display:none}
+.bar3{display:flex;flex-wrap:wrap;gap:4px 18px;padding:0 16px 12px;font-size:.88rem}
+#rigHint{color:var(--fg)}
+.brk{cursor:pointer;outline:none}
+.brk:hover rect:first-child{stroke:#43e07e}
+.brk:focus-visible rect:first-child{stroke:#43e07e;stroke-width:3}
+#rigInfo{font-family:var(--f-num);font-size:.9rem;color:var(--muted)}
+.cal .calgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2.2fr);gap:18px}
+.cal .calgrid>.ctl:last-child{grid-column:1/-1}
+@media (max-width:1000px){.cal .calgrid{grid-template-columns:1fr}}
+.lab{font-weight:500;font-size:.92rem;display:block;margin-bottom:4px}
+.readout{font-family:var(--f-num);font-size:.88rem;line-height:1.7;color:var(--muted);display:block;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.readout b{color:var(--fg);font-weight:400}
+.refinst{background:var(--lcd);border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.refinst .lbl{font-family:var(--f-disp);font-size:.72rem;letter-spacing:.12em;color:#8a96a2}
+#refVal{font-family:var(--f-num);font-size:2rem;color:#7fd3ff}
+.tblwrap{overflow-x:auto}
+.caltbl{min-width:560px}
+.caltbl th{font-size:.78rem;text-align:left;vertical-align:bottom}
+.caltbl td{padding:3px}
+.caltbl input{width:100%;box-sizing:border-box;font:inherit;font-family:var(--f-num);font-size:.92rem;padding:5px 6px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--fg);text-align:right}
+.caltbl input.ok{border-color:var(--sp);box-shadow:inset 0 0 0 1px var(--sp)}
+.caltbl input.bad{border-color:var(--pv);box-shadow:inset 0 0 0 1px var(--pv)}
+.caltbl tr.fasit td,.caltbl tr.fasit th{color:var(--sp);font-family:var(--f-num);font-size:.85rem;text-align:right}
+.rtd{max-height:330px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+#rtdTbl{font-family:var(--f-num);font-size:.8rem;min-width:560px}
+#rtdTbl th{position:sticky;top:0;background:var(--panel);color:var(--out)}
+#rtdTbl td:first-child,#rtdTbl th:first-child{color:var(--pv);font-weight:600;position:sticky;left:0;background:var(--panel)}
+#rtdTbl td.hl{background:color-mix(in srgb,var(--heat) 25%,transparent)}
+.tasks ol{margin:0;padding-left:1.3em;display:grid;gap:8px;max-width:80ch}
+.tasks li::marker{font-family:var(--f-disp);font-weight:700;color:var(--muted)}
+.note{color:var(--muted);font-size:.85rem;max-width:80ch}
+#toast{font-size:.85rem;color:var(--sp);min-height:1.2em}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Temperatursimulator</h1>
+    <p>Modell av temperaturriggen: regulator → SSR → lyspære → PT-100 → Flextop (4–20 mA) → tilbake til regulatoren. SSR/lampe følger måleserien dere tok opp.</p>
+  </header>
+
+  <section class="panel rig" aria-label="Temperaturmodellen">
+    <div class="scene">
+    <svg viewBox="0 0 1000 560" role="img" aria-label="Temperaturmodellen sett forfra eller bakfra">
+      <defs>
+        <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#c3864a"/><stop offset=".35" stop-color="#d59d5e"/><stop offset=".7" stop-color="#c88e50"/><stop offset="1" stop-color="#bb7f42"/></linearGradient>
+        <pattern id="tableTex" width="46" height="46" patternUnits="userSpaceOnUse"><rect width="46" height="46" fill="#9aa3ad"/><path d="M0,10 L46,30 M10,46 L30,0 M0,40 L46,4 M22,46 L46,20" stroke="#c3cad1" stroke-width=".7" opacity=".6"/></pattern>
+        <linearGradient id="board" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f2022"/><stop offset="1" stop-color="#101112"/></linearGradient>
+        <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e2e5e8"/><stop offset=".5" stop-color="#a9afb5"/><stop offset="1" stop-color="#d4d8dc"/></linearGradient>
+        <linearGradient id="metalH" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#9a8a62"/><stop offset=".5" stop-color="#e7dcb8"/><stop offset="1" stop-color="#8f7f58"/></linearGradient>
+        <linearGradient id="ceram" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#d6d4ce"/><stop offset=".45" stop-color="#fbfaf7"/><stop offset="1" stop-color="#cbc9c2"/></linearGradient>
+        <radialGradient id="bulbGlow"><stop offset="0" stop-color="#fff3c4" stop-opacity=".9"/><stop offset=".25" stop-color="#ffd877" stop-opacity=".5"/><stop offset=".6" stop-color="#f0a032" stop-opacity=".14"/><stop offset="1" stop-color="#f0a032" stop-opacity="0"/></radialGradient>
+        <radialGradient id="bulbLit" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#fff2c2"/><stop offset="1" stop-color="#ffc969"/></radialGradient>
+        <radialGradient id="frost" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#ffffff" stop-opacity=".55"/><stop offset=".5" stop-color="#ffffff" stop-opacity=".08"/><stop offset="1" stop-color="#9aa0a6" stop-opacity=".25"/></radialGradient>
+        <clipPath id="bulbClip"><path d="M714,380 C714,362 667,348 665,312 C663,276 697,250 735,250 C773,250 807,276 805,312 C803,348 756,362 756,380 Z"/></clipPath>
+      </defs>
+
+      <!-- vegg og bord -->
+      <rect x="0" y="0" width="1000" height="128" fill="url(#wood)"/>
+      <g fill="none" stroke="#9e6630" stroke-width="1.4" opacity=".35">
+        <path d="M40,0 C70,40 30,80 60,128"/><path d="M230,0 C200,50 260,90 240,128"/><path d="M520,0 C560,30 500,80 540,128"/><path d="M780,0 C760,50 820,80 800,128"/><path d="M930,0 C960,60 910,90 950,128"/>
+      </g>
+      <rect x="0" y="122" width="1000" height="8" fill="#e9ecee"/>
+      <rect x="0" y="130" width="1000" height="430" fill="url(#tableTex)"/>
+
+      <!-- ===================== FORSIDE ===================== -->
+      <g id="viewFront">
+        <path d="M150,330 C110,360 60,372 0,384" fill="none" stroke="#111" stroke-width="6"/>
+        <path d="M150,346 C110,390 60,420 0,452" fill="none" stroke="#151515" stroke-width="5"/>
+        <rect x="84" y="364" width="34" height="11" rx="4" fill="#222" transform="rotate(-18 101 369)"/>
+
+        <rect x="150" y="30" width="700" height="382" rx="3" fill="url(#board)"/>
+        <polygon points="150,412 850,412 932,516 68,516" fill="#1c1d1f"/>
+        <polygon points="150,412 850,412 856,420 144,420" fill="#2a2b2e"/>
+        <rect x="64" y="516" width="872" height="14" fill="#0a0a0a"/>
+
+        <circle id="rigGlow" cx="735" cy="320" r="240" fill="url(#bulbGlow)" opacity="0"/>
+
+        <!-- regulator -->
+        <rect x="205" y="95" width="120" height="208" rx="7" fill="#0b0b0b" stroke="#50565c" stroke-width="2"/>
+        <rect x="212" y="102" width="106" height="194" rx="4" fill="#121416"/>
+        <rect x="220" y="110" width="76" height="110" rx="2" fill="#020303"/>
+        <g font-size="6" fill="#6b7783" style="font-family:var(--f-disp);letter-spacing:.08em">
+          <text x="223" y="120">OUT</text><text x="246" y="120">MAN</text><text x="271" y="120">ALM</text>
+        </g>
+        <circle id="rigLed" cx="240" cy="118" r="2.2" fill="#333"/>
+        <circle id="rigLedM" cx="265" cy="118" r="2.2" fill="#333"/>
+        <circle id="rigLedA" cx="290" cy="118" r="2.2" fill="#333"/>
+        <g font-size="9" fill="#9aa3ab" style="font-family:var(--f-disp);letter-spacing:.06em">
+          <text x="301" y="146">PV</text><text x="301" y="181">SV</text><text x="301" y="213">MV</text>
+        </g>
+        <text id="rigPV" x="293" y="152" text-anchor="end" font-size="31" fill="#ff4a3d" style="font-family:var(--f-num)">21</text>
+        <text id="rigSV" x="293" y="185" text-anchor="end" font-size="22" fill="#43e07e" style="font-family:var(--f-num)">60</text>
+        <text id="rigMV" x="293" y="214" text-anchor="end" font-size="15" fill="#f0a032" style="font-family:var(--f-num)">0.0</text>
+        <g class="rkey" id="rDown" role="button" tabindex="0" aria-label="Senk settpunkt">
+          <rect x="220" y="230" width="35" height="25" rx="4"/><text x="237.5" y="248" text-anchor="middle" font-size="13">▼</text>
+        </g>
+        <g class="rkey" id="rUp" role="button" tabindex="0" aria-label="Øk settpunkt">
+          <rect x="261" y="230" width="35" height="25" rx="4"/><text x="278.5" y="248" text-anchor="middle" font-size="13">▲</text>
+        </g>
+        <g class="rkey" id="rMode" role="button" tabindex="0" aria-label="Bytt mellom auto og manuell">
+          <rect x="220" y="261" width="76" height="25" rx="4"/><text x="258" y="278" text-anchor="middle" font-size="11" style="font-family:var(--f-disp);font-weight:600;letter-spacing:.08em">A / M</text>
+        </g>
+        <text x="265" y="324" text-anchor="middle" font-size="10" fill="#8a96a2">▲▼ endrer SV</text>
+        <text x="265" y="338" text-anchor="middle" font-size="10" fill="#8a96a2">i MAN: endrer MV</text>
+
+        <!-- hull i plata for PT-100-kabel -->
+        <circle cx="640" cy="160" r="6" fill="#050505" stroke="#3a3a3a"/>
+        <circle cx="612" cy="150" r="3" fill="#050505"/>
+
+        <!-- lampesokkel -->
+        <ellipse cx="735" cy="480" rx="110" ry="26" fill="#cfcdc6"/>
+        <rect x="625" y="432" width="220" height="48" fill="url(#ceram)"/>
+        <ellipse cx="735" cy="432" rx="110" ry="26" fill="#f5f4f0"/>
+        <ellipse cx="735" cy="434" rx="92" ry="19" fill="#dcd9d1"/>
+        <circle cx="668" cy="438" r="4.5" fill="#b9bdc1" stroke="#80868c"/>
+        <circle cx="802" cy="438" r="4.5" fill="#b9bdc1" stroke="#80868c"/>
+        <rect x="705" y="392" width="60" height="44" rx="5" fill="url(#ceram)"/>
+        <ellipse cx="735" cy="436" rx="30" ry="6" fill="#d2cfc7"/>
+        <rect x="713" y="378" width="44" height="20" fill="url(#metalH)"/>
+        <g stroke="#7a6c48" stroke-width="1"><line x1="713" y1="383" x2="757" y2="385"/><line x1="713" y1="389" x2="757" y2="391"/><line x1="713" y1="395" x2="757" y2="397"/></g>
+
+        <!-- matt lyspære -->
+        <path d="M714,380 C714,362 667,348 665,312 C663,276 697,250 735,250 C773,250 807,276 805,312 C803,348 756,362 756,380 Z" fill="#e8e7e3" stroke="#c2c4c6" stroke-width="1.2"/>
+        <g clip-path="url(#bulbClip)"><rect id="rigLit" x="660" y="245" width="150" height="140" fill="url(#bulbLit)" opacity="0"/></g>
+        <path d="M714,380 C714,362 667,348 665,312 C663,276 697,250 735,250 C773,250 807,276 805,312 C803,348 756,362 756,380 Z" fill="url(#frost)"/>
+
+        <!-- PT-100 på toppen av pæra, holdt av plaststropp -->
+        <rect id="rigTip" x="718" y="243" width="34" height="8" rx="4" fill="#9aa0a6" stroke="#6d7379" stroke-width=".8" transform="rotate(-5 735 247)"/>
+        <polygon points="688,206 792,200 814,294 718,304" fill="#ddd8ea" fill-opacity=".45" stroke="#ffffff" stroke-opacity=".55" stroke-width="1.2"/>
+        <path d="M640,160 C680,150 700,200 718,246" fill="none" stroke="#f2f2f2" stroke-width="4"/>
+        <path d="M640,160 C680,150 700,200 718,246" fill="none" stroke="#c4302a" stroke-width="4" stroke-dasharray="5 5"/>
+        <text x="680" y="232" font-size="11" fill="#9aa3ab" style="font-family:var(--f-disp);letter-spacing:.08em" text-anchor="end">PT-100</text>
+      </g>
+
+      <!-- ===================== BAKSIDE ===================== -->
+      <g id="viewBack" hidden>
+        <circle id="rigGlowB" cx="250" cy="150" r="240" fill="url(#bulbGlow)" opacity="0"/>
+        <rect x="90" y="40" width="820" height="330" rx="3" fill="url(#board)"/>
+        <polygon points="90,370 910,370 966,506 34,506" fill="#1c1d1f"/>
+        <rect x="30" y="506" width="940" height="14" fill="#0a0a0a"/>
+        <circle cx="336" cy="190" r="6" fill="#050505" stroke="#3a3a3a"/>
+        <circle cx="210" cy="300" r="4" fill="#9aa0a6"/>
+
+        <!-- ledninger bak komponentene (etter elskjema) -->
+        <g fill="none" stroke-linecap="round">
+          <!-- nett inn og PE -->
+          <path d="M170,500 C130,400 230,330 255,384" stroke="#ececec" stroke-width="9"/>
+          <path d="M120,470 C300,520 600,500 760,480" stroke="#b8c22e" stroke-width="3"/>
+          <path d="M120,470 C300,520 600,500 760,480" stroke="#2f9a3e" stroke-width="3" stroke-dasharray="8 8"/>
+          <!-- fra sikring Q0 til rekkeklemmer L1/L2 -->
+          <path d="M255,496 C250,535 380,530 382,488" stroke="#3b2a1e" stroke-width="3.5"/>
+          <path d="M315,496 C320,525 395,520 397,488" stroke="#3d6fb5" stroke-width="3.5"/>
+          <!-- forsyning regulator klemme 1 (L1) og 2 (L2) -->
+          <path d="M382,404 C380,300 700,60 805,85" stroke="#3b2a1e" stroke-width="2.5"/>
+          <path d="M397,404 C400,310 700,90 805,104" stroke="#3d6fb5" stroke-width="2.5"/>
+          <!-- forsyning 24 V-modul L/N -->
+          <path d="M382,404 C390,330 640,320 672,362" stroke="#3b2a1e" stroke-width="2.5"/>
+          <path d="M397,404 C410,340 660,330 690,362" stroke="#3d6fb5" stroke-width="2.5"/>
+          <!-- SSR: L1 inn, T1 ut til lampe H1, retur til L2 -->
+          <path d="M382,488 C390,530 540,530 552,482" stroke="#3b2a1e" stroke-width="3"/>
+          <path d="M602,482 C640,540 160,560 150,262" stroke="#151515" stroke-width="3.5"/>
+          <path d="M397,404 C390,330 170,330 162,262" stroke="#3d6fb5" stroke-width="3.5"/>
+          <!-- regulator klemme 3 (+) og 4 (−) til SSR A1+/A2− -->
+          <path d="M805,123 C700,160 560,290 552,380" stroke="#c4302a" stroke-width="2.5"/>
+          <path d="M805,142 C710,180 610,300 602,380" stroke="#1a1a1a" stroke-width="2.5"/>
+          <!-- 4–20 mA-sløyfe: +24 V → FlexTop + … FlexTop − → Wago → klemme 22 (+) … klemme 23 (−) → 0 V -->
+          <path id="w24p" d="M690,488 C700,540 330,420 360,240 C370,170 395,118 418,118" stroke="#c4302a" stroke-width="2.5"/>
+          <path d="M418,162 C410,260 450,330 470,350" stroke="#e8e8e8" stroke-width="2.5"/>
+          <path d="M497,350 C600,330 760,300 855,256" stroke="#e8e8e8" stroke-width="2.5"/>
+          <path id="w24n" d="M855,275 C820,330 760,420 724,488" stroke="#1a1a1a" stroke-width="2.5"/>
+        </g>
+        <!-- gjennomføring til lampa -->
+        <circle cx="156" cy="258" r="7" fill="#050505" stroke="#3a3a3a"/>
+        <text x="156" y="242" text-anchor="middle" font-size="9" fill="#9aa3ab">til lampe H1</text>
+        <!-- PT-100-kabel (2, 3 eller 4 ledere) -->
+        <g id="ptWires" fill="none" stroke-linecap="round"></g>
+        <!-- Flextop (Baumer) -->
+        <circle cx="450" cy="140" r="58" fill="#111" stroke="#3d3d3d" stroke-width="2"/>
+        <circle cx="450" cy="140" r="44" fill="#eef0f1"/>
+        <text x="450" y="132" text-anchor="middle" font-size="12" font-weight="600" fill="#2a2f34" style="font-family:var(--f-disp)">FlexTop 2201</text>
+        <text x="450" y="146" text-anchor="middle" font-size="8" fill="#4a535b">RTD → 4–20 mA</text>
+        <text x="450" y="157" text-anchor="middle" font-size="8" fill="#4a535b">0–150 °C</text>
+        <g fill="#c3c7cb" stroke="#6e757b"><circle cx="418" cy="118" r="6"/><circle cx="418" cy="162" r="6"/><circle cx="482" cy="118" r="6"/><circle cx="482" cy="162" r="6"/><circle cx="494" cy="133" r="4.5"/><circle cx="494" cy="147" r="4.5"/></g>
+        <g font-size="9" fill="#cfd5db" style="font-family:var(--f-disp)"><text x="386" y="114" text-anchor="end" font-size="12">+</text><text x="386" y="172" text-anchor="end" font-size="12">−</text><text x="514" y="114" font-size="12">3</text><text x="504" y="137" font-size="9">4</text><text x="504" y="151" font-size="9">5</text><text x="514" y="172" font-size="12">6</text></g>
+
+        <!-- regulator bakfra med rekkeklemmer -->
+        <rect x="800" y="48" width="52" height="20" rx="2" fill="#efefed"/>
+        <rect x="785" y="62" width="100" height="268" rx="3" fill="#0d0d0d" stroke="#333"/>
+        <g id="termCols"></g>
+        <text x="835" y="344" text-anchor="middle" font-size="9" fill="#8a96a2" style="font-family:var(--f-disp);letter-spacing:.1em">E5EC</text>
+
+        <!-- DIN-skinne -->
+        <rect x="170" y="440" width="720" height="16" fill="url(#metal)"/>
+        <g fill="#7c838a"><rect x="200" y="445" width="20" height="6" rx="3"/><rect x="480" y="445" width="20" height="6" rx="3"/><rect x="760" y="445" width="20" height="6" rx="3"/></g>
+
+        <!-- automatsikring -->
+        <g id="brk" class="brk" role="button" tabindex="0" aria-label="Automatsikring på eller av">
+          <rect x="225" y="378" width="120" height="128" rx="4" fill="#f3f3f1" stroke="#c4c4be"/>
+          <rect x="225" y="378" width="120" height="14" fill="#2f8a3e"/>
+          <g fill="#c3c7cb" stroke="#80868c"><circle cx="255" cy="402" r="5"/><circle cx="315" cy="402" r="5"/><circle cx="255" cy="496" r="5"/><circle cx="315" cy="496" r="5"/></g>
+          <rect x="238" y="418" width="94" height="44" rx="3" fill="#e3e3df"/>
+          <g id="brkHandle"><rect x="244" y="422" width="82" height="18" rx="3" fill="#3aa24c"/></g>
+          <rect id="brkFlag" x="276" y="468" width="18" height="10" fill="#d8342c"/>
+          <text x="285" y="490" text-anchor="middle" font-size="9" fill="#555">Q0 · B6</text>
+        </g>
+        <text x="285" y="372" text-anchor="middle" font-size="10" fill="#9aa3ab">Klikk sikringen</text>
+
+        <!-- rekkeklemmer -->
+        <g>
+          <rect x="375" y="396" width="14" height="94" fill="#b9b2a4"/><rect x="390" y="396" width="14" height="94" fill="#3d6fb5"/>
+          <rect x="405" y="396" width="14" height="94" fill="#b9b2a4"/><rect x="420" y="396" width="14" height="94" fill="#d7c23a"/>
+          <rect x="422" y="396" width="4" height="94" fill="#2f9a3e"/><rect x="435" y="396" width="14" height="94" fill="#b9b2a4"/>
+          <rect x="450" y="396" width="14" height="94" fill="#b9b2a4"/>
+          <g fill="#8d939a"><circle cx="382" cy="404" r="3"/><circle cx="397" cy="404" r="3"/><circle cx="412" cy="404" r="3"/><circle cx="427" cy="404" r="3"/><circle cx="442" cy="404" r="3"/><circle cx="457" cy="404" r="3"/></g>
+        </g>
+        <text x="382" y="391" text-anchor="middle" font-size="9" font-weight="600" fill="#9aa3ab">L1</text><text x="397" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#9aa3ab">L2</text><text x="427" y="391" text-anchor="middle" font-size="9" font-weight="600" fill="#9aa3ab">PE</text>
+        <!-- Wago -->
+        <rect x="466" y="348" width="34" height="18" rx="2" fill="#eeeeee" fill-opacity=".75" stroke="#999"/>
+        <g fill="#f08a24"><rect x="470" y="344" width="7" height="8"/><rect x="480" y="344" width="7" height="8"/><rect x="490" y="344" width="7" height="8"/></g>
+
+        <!-- SSR -->
+        <rect x="525" y="492" width="105" height="10" fill="#111"/>
+        <rect x="520" y="368" width="115" height="126" rx="3" fill="#e9ebec" stroke="#b9bcbf"/>
+        <rect x="528" y="390" width="99" height="82" rx="2" fill="#ffffff" fill-opacity=".45" stroke="#cfd3d6"/>
+        <text x="577" y="420" text-anchor="middle" font-size="13" font-weight="700" fill="#33393f" style="font-family:var(--f-disp)">SSR</text>
+        <text x="577" y="434" text-anchor="middle" font-size="8" fill="#4a535b">inn 4–20 mA</text>
+        <text x="577" y="445" text-anchor="middle" font-size="8" fill="#4a535b">ut 0–230 V AC</text>
+        <circle id="ssrLed" cx="577" cy="458" r="4" fill="#3a3f44"/>
+        <g fill="#c3c7cb" stroke="#80868c"><circle cx="552" cy="380" r="5"/><circle cx="602" cy="380" r="5"/><circle cx="552" cy="482" r="5"/><circle cx="602" cy="482" r="5"/></g>
+        <g font-size="7" fill="#4a535b"><text x="562" y="383">A1+</text><text x="583" y="383" text-anchor="end">A2−</text><text x="562" y="485">L1</text><text x="592" y="485" text-anchor="end">T1</text></g>
+
+        <!-- 24 V DC strømforsyning -->
+        <rect x="655" y="350" width="115" height="150" rx="3" fill="#161616" stroke="#353535"/>
+        <g fill="#c3c7cb"><circle cx="672" cy="362" r="4"/><circle cx="690" cy="362" r="4"/><circle cx="708" cy="362" r="4"/></g>
+        <text x="712" y="390" text-anchor="middle" font-size="11" fill="#d5d9dd" style="font-family:var(--f-disp);letter-spacing:.06em">24 V DC</text>
+        <circle id="psuLed" cx="752" cy="364" r="4" fill="#2a2f33"/>
+        <g fill="#c3c7cb" stroke="#80868c"><circle cx="690" cy="488" r="5"/><circle cx="724" cy="488" r="5"/></g>
+        <g font-size="8" fill="#cfd5db"><text x="690" y="478" text-anchor="middle">+24</text><text x="724" y="478" text-anchor="middle">0 V</text></g>
+        <text x="752" y="378" text-anchor="middle" font-size="6" fill="#8a96a2">DC ON</text>
+        <g stroke="#2d2d2d" stroke-width="3"><line x1="668" y1="410" x2="756" y2="410"/><line x1="668" y1="420" x2="756" y2="420"/><line x1="668" y1="430" x2="756" y2="430"/><line x1="668" y1="440" x2="756" y2="440"/><line x1="668" y1="450" x2="756" y2="450"/></g>
+      </g>
+
+      <!-- multimeter (flyttes mellom forside og bakside) -->
+      <g id="mmG" transform="translate(860,300) rotate(4)">
+        <rect x="0" y="0" width="140" height="236" rx="16" fill="#3cae58"/>
+        <rect x="11" y="11" width="118" height="214" rx="9" fill="#2b2f33"/>
+        <rect x="20" y="22" width="100" height="52" rx="3" fill="#c7d3b6"/>
+        <text id="mmVal" x="112" y="58" text-anchor="end" font-size="27" fill="#1b1f17" style="font-family:var(--f-num)">0,2</text>
+        <text id="mmUnit" x="26" y="36" font-size="10" fill="#33402a" style="font-family:var(--f-disp);letter-spacing:.08em">V AC</text>
+        <g fill="#454b51"><rect x="22" y="84" width="20" height="10" rx="2"/><rect x="48" y="84" width="20" height="10" rx="2"/><rect x="74" y="84" width="20" height="10" rx="2"/><rect x="100" y="84" width="20" height="10" rx="2"/></g>
+        <circle cx="70" cy="148" r="36" fill="#1c1f22" stroke="#59616a" stroke-width="2"/>
+        <circle cx="70" cy="148" r="20" fill="#343a40"/>
+        <line id="mmPtr" x1="70" y1="148" x2="70" y2="116" stroke="#e8e8e8" stroke-width="5" stroke-linecap="round"/>
+        <g font-size="9" fill="#cfd5db" style="font-family:var(--f-disp)" text-anchor="middle">
+          <text x="34" y="112">V~</text><text x="106" y="112">mA</text><text x="24" y="168">Ω</text><text x="116" y="168">V=</text>
+          <text x="40" y="222" font-size="7">COM</text><text x="70" y="222" font-size="7">VΩ</text><text x="100" y="222" font-size="7">mA</text>
+        </g>
+        <circle cx="40" cy="206" r="7" fill="#111" stroke="#555"/><circle cx="70" cy="206" r="7" fill="#b42a22" stroke="#555"/><circle cx="100" cy="206" r="7" fill="#b42a22" stroke="#555"/>
+      </g>
+      <path id="leadR" d="" fill="none" stroke="#c5302a" stroke-width="3.5" stroke-linecap="round"/>
+      <path id="leadB" d="" fill="none" stroke="#1a1a1a" stroke-width="3.5" stroke-linecap="round"/>
+      <circle id="tipR" r="4.5" fill="#c5302a" stroke="#fff" stroke-width="1"/><circle id="tipB" r="4.5" fill="#1a1a1a" stroke="#fff" stroke-width="1"/>
+    </svg>
+    </div>
+    <div class="bar2">
+      <div class="seg" role="group" aria-label="Velg side">
+        <button type="button" data-view="front" aria-pressed="true">Forside</button>
+        <button type="button" data-view="back" aria-pressed="false">Bakside</button>
+      </div>
+      <div class="seg" role="group" aria-label="Hva måler multimeteret">
+        <button type="button" data-mm="V" aria-pressed="true">Volt over lampa</button>
+        <button type="button" data-mm="Vssr" aria-pressed="false">Volt over SSR</button>
+        <button type="button" data-mm="mao" aria-pressed="false">mA ut fra regulator</button>
+        <button type="button" data-mm="mai" aria-pressed="false">mA fra Flextop</button>
+        <button type="button" data-mm="R" aria-pressed="false">Ohm PT-100</button>
+      </div>
+    </div>
+    <div class="bar3"><span id="rigInfo"></span><span id="rigHint"></span></div>
+  </section>
+
+  <section class="top">
+    <div class="face" aria-label="Regulator">
+      <div class="brand"><span>REGULATOR</span><span>TIC-01</span></div>
+      <div class="disp"><span class="lbl">PV · MÅLT °C</span><span id="pvDisp">21.0</span></div>
+      <div class="disp"><span class="lbl">SP · SETTPUNKT °C</span><span id="spDisp">60.0</span></div>
+      <div>
+        <div class="outrow"><span>OUT</span><span id="outTxt">0.0 %</span></div>
+        <div class="bar"><i id="outBar"></i></div>
+      </div>
+      <div class="leds"><span id="ledOut" class="out">OUT</span><span id="ledMan" class="man">MAN</span><span id="ledAlm" class="alm">ALARM</span></div>
+      <div class="keys">
+        <button id="kDown" type="button">▼</button>
+        <button id="kMode" type="button" aria-pressed="false">A / M</button>
+        <button id="kUp" type="button">▲</button>
+      </div>
+      <div class="brand" id="faceMsg" style="color:#ff4a3d;min-height:1.1em"></div>
+    </div>
+
+    <div class="panel">
+      <div class="trendhead">
+        <h2>Trend · siste 10 minutter</h2>
+        <div class="legend"><span><b style="background:var(--sp)"></b>SP</span><span><b style="background:var(--pv)"></b>PV</span><span><b style="background:var(--out)"></b>Utgang %</span></div>
+      </div>
+      <canvas id="trend"></canvas>
+      <div class="btnrow" style="margin-top:10px">
+        <button class="btn" id="bRun" type="button">Pause</button>
+        <select id="speed" aria-label="Simuleringshastighet">
+          <option value="1">Sanntid ×1</option>
+          <option value="5" selected>Hurtig ×5</option>
+          <option value="20">Hurtig ×20</option>
+        </select>
+        <button class="btn" id="bReset" type="button">Start på nytt (kald pære)</button>
+        <button class="btn" id="bCopy" type="button">Kopier måledata (til Excel)</button>
+        <span id="clock" class="note" style="align-self:center"></span>
+      </div>
+      <div id="toast"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Blokkskjema med levende verdier</h2>
+    <div class="diagram">
+    <svg viewBox="0 0 1000 320" role="img" aria-label="Blokkskjema av reguleringssløyfen">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--wire)"/></marker>
+        <radialGradient id="glow"><stop offset="0" stop-color="var(--heat)" stop-opacity="1"/><stop offset="1" stop-color="var(--heat)" stop-opacity="0"/></radialGradient>
+      </defs>
+      <g fill="none" stroke="var(--wire)" stroke-width="2">
+        <rect x="70" y="30" width="430" height="270" stroke-dasharray="6 5" stroke-width="1.5"/>
+        <line x1="10" y1="110" x2="116" y2="110" marker-end="url(#ar)"/>
+        <circle cx="150" cy="110" r="32" fill="var(--panel)"/>
+        <line x1="182" y1="110" x2="246" y2="110" marker-end="url(#ar)"/>
+        <rect x="250" y="50" width="56" height="120" fill="var(--panel)"/>
+        <line x1="250" y1="90" x2="306" y2="90"/><line x1="250" y1="130" x2="306" y2="130"/>
+        <line x1="306" y1="110" x2="366" y2="110" marker-end="url(#ar)"/>
+        <rect x="370" y="85" width="50" height="50" fill="var(--panel)"/>
+        <path d="M378,92 L412,110 L378,128 z"/>
+        <line x1="420" y1="110" x2="586" y2="110" marker-end="url(#ar)"/>
+        <rect x="590" y="85" width="80" height="50" fill="var(--panel)"/>
+        <line x1="670" y1="110" x2="726" y2="110" marker-end="url(#ar)"/>
+        <line x1="790" y1="110" x2="985" y2="110" marker-end="url(#ar)"/>
+        <line x1="900" y1="110" x2="900" y2="250"/>
+        <line x1="900" y1="250" x2="874" y2="250" marker-end="url(#ar)"/>
+        <rect x="800" y="225" width="70" height="50" fill="var(--panel)"/>
+        <line x1="800" y1="250" x2="716" y2="250" marker-end="url(#ar)"/>
+        <circle cx="682" cy="250" r="32" fill="var(--panel)"/>
+        <rect x="556" y="284" width="66" height="26" fill="var(--panel)"/>
+        <line x1="622" y1="294" x2="656" y2="270" marker-end="url(#ar)"/>
+        <line x1="650" y1="250" x2="424" y2="250" marker-end="url(#ar)"/>
+        <rect x="370" y="225" width="50" height="50" fill="var(--panel)"/>
+        <path d="M412,232 L378,250 L412,268 z"/>
+        <polyline points="370,250 150,250 150,146" marker-end="url(#ar)"/>
+      </g>
+      <circle id="lampGlow" cx="760" cy="110" r="46" fill="url(#glow)" opacity="0"/>
+      <g fill="none" stroke="var(--wire)" stroke-width="2">
+        <rect x="730" y="80" width="60" height="60" fill="var(--panel)" fill-opacity=".6"/>
+        <circle cx="760" cy="110" r="20"/>
+        <line x1="746" y1="96" x2="774" y2="124"/><line x1="774" y1="96" x2="746" y2="124"/>
+      </g>
+      <text x="80" y="50" class="cap">regulator</text>
+      <text x="141" y="102" font-size="16">+</text><text x="128" y="136" font-size="16">−</text>
+      <text x="278" y="76" text-anchor="middle" font-weight="600">P</text>
+      <text x="278" y="116" text-anchor="middle" font-weight="600">I</text>
+      <text x="278" y="156" text-anchor="middle" font-weight="600">D</text>
+      <text x="395" y="78" text-anchor="middle" class="cap">utgang</text>
+      <text x="630" y="115" text-anchor="middle" font-weight="600">SSR</text>
+      <text x="760" y="72" text-anchor="middle" class="cap">lampe</text>
+      <text x="835" y="246" text-anchor="middle" font-weight="600">PT-</text><text x="835" y="264" text-anchor="middle" font-weight="600">100</text>
+      <text x="682" y="255" text-anchor="middle" font-weight="600" font-size="13">Flextop</text>
+      <text x="395" y="292" text-anchor="middle" class="cap">inngang</text>
+      <text x="589" y="302" text-anchor="middle" font-size="12" font-weight="600">24 V DC</text>
+
+      <text x="14" y="98" class="cap">settpunkt</text>
+      <text x="14" y="135" class="v" id="dSP">60.0 °C</text>
+      <text x="186" y="98" class="cap">avvik</text>
+      <text x="186" y="138" class="v" id="dE">0.0</text>
+      <text x="312" y="98" class="cap">pådrag</text>
+      <text x="312" y="138" class="v" id="dU">0 %</text>
+      <text x="440" y="98" class="cap">4–20 mA</text>
+      <text x="440" y="138" class="v" id="dMAo">4.00 mA</text>
+      <text x="676" y="98" class="cap">0–230 V</text>
+      <text x="676" y="138" class="v" id="dV">0 V</text>
+      <text x="810" y="98" class="cap">varme</text>
+      <text x="810" y="138" class="v" id="dT">21.0 °C</text>
+      <text x="906" y="190" class="cap">t sensor</text>
+      <text x="906" y="210" class="v" id="dTs">21.0 °C</text>
+      <text x="726" y="240" class="cap">ohm</text>
+      <text x="726" y="290" class="v" id="dR">108.2 Ω</text>
+      <text x="440" y="240" class="cap">4–20 mA</text>
+      <text x="440" y="290" class="v" id="dMAi">6.24 mA</text>
+      <text x="160" y="240" class="cap">målt verdi</text>
+      <text x="160" y="290" class="v" id="dPV">21.0 °C</text>
+    </svg>
+    </div>
+    <p class="note">Flextop er satt opp med måleområde 0–150 °C → 4–20 mA. PT-100 følger IEC 60751 (100,0 Ω ved 0 °C, ca. 0,385 Ω per °C). FlexTop er en totråds transmitter: den får forsyning fra 24 V DC i serie med sløyfa, og regulatoren (E5EC, klemme 22 + / 23 −) måler strømmen.</p>
+  </section>
+
+  <section class="grid3">
+    <div class="panel ctl">
+      <h2>Regulator</h2>
+      <div class="field"><label for="sp">Settpunkt <output id="spO"></output></label><input id="sp" type="range" min="0" max="130" step="1" value="60"></div>
+      <div class="field"><label for="kp">P – forsterkning Kp <output id="kpO"></output></label><input id="kp" type="range" min="0" max="20" step="0.5" value="4"><small>% pådrag per °C avvik</small></div>
+      <div class="field"><label for="ti">I – integraltid Ti <output id="tiO"></output></label><input id="ti" type="range" min="0" max="300" step="5" value="60"><small>0 = I-ledd av</small></div>
+      <div class="field"><label for="td">D – derivattid Td <output id="tdO"></output></label><input id="td" type="range" min="0" max="30" step="1" value="0"><small>0 = D-ledd av</small></div>
+      <div class="field"><label for="man">Manuelt pådrag <output id="manO"></output></label><input id="man" type="range" min="0" max="100" step="1" value="0"><small>Brukes når regulatoren står i MAN (trykk A / M)</small></div>
+    </div>
+
+    <div class="panel ctl">
+      <h2>Prosess og forstyrrelser</h2>
+      <div class="field"><label for="amb">Romtemperatur <output id="ambO"></output></label><input id="amb" type="range" min="10" max="30" step="1" value="21"></div>
+      <label class="check"><input id="fan" type="checkbox"> Vifte blåser på pæra (mer varmetap)</label>
+      <div class="field"><label for="noise">Støy på målesignalet <output id="noiseO"></output></label><input id="noise" type="range" min="0" max="0.15" step="0.01" value="0.01"></div>
+      <div class="field"><label for="filt">Inngangsfilter i regulatoren <output id="filtO"></output></label><input id="filt" type="range" min="0" max="10" step="0.5" value="2"><small>Demper støy på PV. For mye filter gjør sløyfa tregere.</small></div>
+      <div class="field"><label for="tauS">Følerens tidskonstant <output id="tauSO"></output></label><input id="tauS" type="range" min="1" max="40" step="1" value="6"><small>Tykk lomme = treg føler</small></div>
+      <h2 style="margin-top:6px">Feil</h2>
+      <div class="field"><label for="fault">Legg inn feil</label>
+        <select id="fault">
+          <option value="none">Ingen feil</option>
+          <option value="pt_open">PT-100 brudd (åpen krets)</option>
+          <option value="pt_short">PT-100 kortslutning</option>
+          <option value="ssr_open">SSR leder ikke</option>
+          <option value="ssr_short">SSR kortsluttet (leder alltid)</option>
+          <option value="loop">Brudd i 4–20 mA-sløyfe</option>
+          <option value="psu24">24 V DC-forsyning faller ut</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>SSR + lampe · målt kurve</h2>
+      <div class="ssr">
+        <canvas id="ssrChart"></canvas>
+        <table aria-label="Måleserie">
+          <thead><tr><th>Utgang %</th><th>Volt lampe</th></tr></thead>
+          <tbody id="ssrTbl"></tbody>
+        </table>
+      </div>
+      <p class="note">Simulatoren interpolerer lineært mellom målepunktene. Kurven er brattest ved lavt pådrag, så sløyfeforsterkningen er størst der.</p>
+    </div>
+  </section>
+
+
+  <section class="panel cal">
+    <h2>PT-100, tilkobling og kalibrering</h2>
+    <div class="calgrid">
+      <div class="ctl">
+        <div class="field"><label for="wire">Tilkobling PT-100 → FlexTop</label>
+          <select id="wire"><option value="2" selected>2-leder (som på riggen)</option><option value="3">3-leder</option><option value="4">4-leder</option></select>
+          <small>2-leder: ledningene måles med. 3-leder: kompenserer når lederne er like. 4-leder: bare elementet måles.</small></div>
+        <div class="field"><label for="rLead">Motstand per leder <output id="rLeadO"></output></label><input id="rLead" type="range" min="0" max="2" step="0.05" value="0.05"><small>Lang eller tynn kabel gir høyere motstand</small></div>
+        <div class="field"><label for="sens">Føler</label>
+          <select id="sens"><option value="rig" selected>Riggens føler (fra kalibreringsarket)</option><option value="ideal">Ideell føler (som tabellen)</option><option value="new">Ny, ukjent føler</option></select></div>
+        <div class="field"><label for="ins">INS – inngangsjustering i E5EC <output id="insO"></output></label><input id="ins" type="range" min="-5" max="5" step="0.1" value="0"><small>Legges til PV for å rette opp målefeil</small></div>
+        <div class="readout" id="ptRead"></div>
+      </div>
+      <div class="ctl">
+        <div class="field"><span class="lab">Hvor sitter føleren?</span>
+          <div class="seg" role="group" aria-label="Følerens plassering">
+            <button type="button" data-loc="lamp" aria-pressed="true">På lampa</button>
+            <button type="button" data-loc="cold" aria-pressed="false">Kaldt vann</button>
+            <button type="button" data-loc="hot" aria-pressed="false">Varmt vann</button>
+          </div></div>
+        <div class="refinst"><span class="lbl">KALIBRERINGSINSTRUMENT · referanse</span><span id="refVal">— — —</span></div>
+        <button class="btn" id="bBath" type="button">Lag nye vannbad</button>
+        <div class="tblwrap">
+        <table class="caltbl">
+          <thead><tr><th></th><th>Kalibrerings&shy;instrument målt temp °C</th><th>Målt i ohm, finn i tabell</th><th>Føler som skal måles, målt verdi i ohm</th><th>Avvik i ohm</th><th>Avvik i temp °C</th></tr></thead>
+          <tbody>
+            <tr><th>Kaldt vann</th><td><input id="c_ref" inputmode="decimal" aria-label="Kaldt: referanse"></td><td><input id="c_tab" inputmode="decimal" aria-label="Kaldt: tabell"></td><td><input id="c_mes" inputmode="decimal" aria-label="Kaldt: målt"></td><td><input id="c_dR" inputmode="decimal" aria-label="Kaldt: avvik ohm"></td><td><input id="c_dT" inputmode="decimal" aria-label="Kaldt: avvik temp"></td></tr>
+            <tr class="fasit" hidden><th>Fasit</th><td id="f_c_ref"></td><td id="f_c_tab"></td><td id="f_c_mes"></td><td id="f_c_dR"></td><td id="f_c_dT"></td></tr>
+            <tr><th>Varmt vann</th><td><input id="h_ref" inputmode="decimal" aria-label="Varmt: referanse"></td><td><input id="h_tab" inputmode="decimal" aria-label="Varmt: tabell"></td><td><input id="h_mes" inputmode="decimal" aria-label="Varmt: målt"></td><td><input id="h_dR" inputmode="decimal" aria-label="Varmt: avvik ohm"></td><td><input id="h_dT" inputmode="decimal" aria-label="Varmt: avvik temp"></td></tr>
+            <tr class="fasit" hidden><th>Fasit</th><td id="f_h_ref"></td><td id="f_h_tab"></td><td id="f_h_mes"></td><td id="f_h_dR"></td><td id="f_h_dT"></td></tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="btnrow"><button class="btn" id="bFasit" type="button">Vis fasit</button><button class="btn" id="bClear" type="button">Tøm skjema</button></div>
+        <p class="note" id="fasitNote"></p>
+        <p class="note">Framgangsmåte: sett føleren i vannbadet, vent til multimeteret står stille, les av referansen og mål ohm mellom klemme 3 og 6 på FlexTop (velg «Ohm PT-100»). Slå opp referansetemperaturen i tabellen og regn ut avviket.</p>
+      </div>
+      <div class="ctl">
+        <span class="lab">PT-100-tabell (IEC 60751), Ω</span>
+        <div class="tblwrap rtd"><table id="rtdTbl"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel tasks">
+    <h2>Prøv dette</h2>
+    <ol>
+      <li>Sett regulatoren i MAN og gi 50 % pådrag fra kald pære. Les av hvor lang tid det tar før temperaturen har nådd 63 % av endringen (tidskonstanten).</li>
+      <li>Sett Ti = 0 og Td = 0 (bare P). Hvilket stasjonært avvik får du med Kp = 2, 5 og 10?</li>
+      <li>Skru på I-leddet igjen. Hva skjer med avviket? Hva skjer hvis Ti blir veldig liten?</li>
+      <li>Øk Kp til sløyfa begynner å svinge. Noter Kp og periodetiden. Gjør det samme med treg føler.</li>
+      <li>Slå på vifta midt i en stabil periode. Hvor fort tar regulatoren igjen forstyrrelsen?</li>
+      <li>Legg inn PT-100 brudd og deretter SSR kortsluttet. Hvilken feil er farligst, og hvorfor? Hvordan oppdager regulatoren den første?</li>
+      <li>Sett føleren i kaldt og varmt vann og fyll ut kalibreringsskjemaet. Er avviket likt i begge punktene? Hvilken INS-verdi ville du valgt ved 60 °C?</li>
+      <li>Øk motstanden per leder til 1 Ω med 2-leder tilkobling. Hvor mange grader feil gir det? Bytt til 3- og 4-leder og sammenlign.</li>
+      <li>Legg inn feilen «24 V DC-forsyning faller ut». Mål strømmen i sløyfa og forklar hvorfor regulatoren viser følerfeil.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const SSR=[[0,0.2],[25,112.8],[50,162],[75,221],[100,238.7]];
+const RANGE=150, PMAX=60, KPROC=2.0, TAU=80, DEAD=3, DT=0.1;
+
+function ssrVolt(u){u=Math.max(0,Math.min(100,u));for(let i=1;i<SSR.length;i++){if(u<=SSR[i][0]){const a=SSR[i-1],b=SSR[i];return a[1]+(b[1]-a[1])*(u-a[0])/(b[0]-a[0]);}}return SSR[SSR.length-1][1];}
+function pt100(T){return 100*(1+3.9083e-3*T-5.775e-7*T*T);}
+function invPt(R){const A=3.9083e-3,B=-5.775e-7;return (-A+Math.sqrt(A*A-4*B*(1-R/100)))/(2*B);}
+// avvik i føleren (Ω) som funksjon av temperatur
+function sensDev(T){
+  if(P.sens==='rig') return 0.373-0.01571*T;      // tilpasset kalibreringsarket (106,5 Ω ved 16,1 °C og 116,2 Ω ved 42,2 °C målt på klemme 3–6, inkl. 2 × 0,05 Ω ledning)
+  if(P.sens==='new') return P.newA+P.newB*T;
+  return 0;
+}
+function gauss(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+const P={sens:'rig',newA:0,newB:0,wire:2,rLead:0.05,ins:0,loc:'lamp',bathC:16.1,bathH:42.2,filt:2,power:true,sp:60,kp:4,ti:60,td:0,man:0,amb:21,fan:false,noise:0.01,tauS:6,fault:'none'};
+let S, running=true, auto=true;
+function reset(){
+  S={t:0,T:P.amb,Ts:P.amb,I:0,pvPrev:null,pvF:null,dF:0,u:0,V:0,maIn:4,maOut:4,pv:P.amb,R:pt100(P.amb),brk:false,
+     buf:new Array(Math.round(DEAD/DT)).fill(0),hist:[],nextLog:0};
+}
+reset();
+
+function thermal(pd){
+  const h=P.fan?2.2:1;
+  S.T+=DT*(KPROC*pd-(S.T-P.amb)*h)/TAU;
+  const Tsrc=P.loc==='cold'?P.bathC:P.loc==='hot'?P.bathH:S.T;
+  S.Ts+=DT*(Tsrc-S.Ts)/(P.loc==='lamp'?P.tauS:Math.max(4,P.tauS*1.5));
+  S.t+=DT;
+  if(S.t>=S.nextLog){S.hist.push([S.t,P.sp,isFinite(S.pv)?Math.max(-5,Math.min(160,S.pv)):0,S.u,S.T,S.V]); if(S.hist.length>1200)S.hist.shift(); S.nextLog+=0.5;}
+}
+function step(){
+  if(!P.power){ // sikringen er slått av: regulator, 24 V og SSR er strømløse
+    S.R=P.fault==='pt_open'?Infinity:pt100(S.Ts)+sensDev(S.Ts)+2*P.rLead; S.maIn=0; S.maOut=0; S.u=0; S.V=0; S.I=0; S.pvPrev=null; S.brk=false; S.pv=NaN;
+    S.buf.push(0); thermal(S.buf.shift()); return;
+  }
+  // --- måling: PT-100 -> Flextop -> regulatorinngang
+  const Rs=pt100(S.Ts)+sensDev(S.Ts);                    // selve platinaelementet
+  const Rleads=2*P.rLead;                                 // to ledere i serie med elementet
+  // FlexTop: 2-leder måler med ledningsmotstand, 3-leder kompenserer, 4-leder måler bare elementet
+  const Rft=P.wire===2?Rs+Rleads:Rs;
+  let R=Rs+Rleads, ma;                                    // R = det multimeteret ser mellom klemme 3 og 6
+  const dead=P.fault==='loop'||P.fault==='psu24';
+  if(P.fault==='pt_open'){R=Infinity; ma=21.0;}          // oppskala ved brudd
+  else if(P.fault==='pt_short'){R=0.5; ma=3.6;}          // nedskala ved kortslutning
+  else ma=4+16*(invPt(Rft)/RANGE);
+  if(dead) ma=0;
+  if(isFinite(R)&&P.fault!=='pt_short'&&!dead) ma=Math.max(3.8,Math.min(20.5,ma));
+  if(!dead) ma+=gauss()*P.noise;
+  S.R=R; S.Rs=Rs; S.maIn=ma;
+  S.brk = ma<3.7 || ma>20.6;
+  const pvRaw=(ma-4)/16*RANGE+P.ins;                    // INS = inngangsjustering i E5EC
+  // inngangsfilter i regulatoren (1. ordens digitalt filter, som "input filter" i menyen)
+  if(S.pvF==null||!isFinite(S.pvF)||S.brk) S.pvF=pvRaw;
+  else S.pvF+=(pvRaw-S.pvF)*Math.min(1,DT/Math.max(DT,P.filt));
+  const pv=S.brk?pvRaw:S.pvF; S.pv=pv;
+
+  // --- PID
+  const e=P.sp-pv; let u;
+  if(S.brk){u=0; S.I=0;}                                  // sikker tilstand ved følerfeil
+  else if(!auto){u=P.man; S.I=u-P.kp*e; S.dF=0;}          // MAN: integral følger (støtfri overgang)
+  else{
+    const dpv=S.pvPrev==null?0:(pv-S.pvPrev)/DT;
+    S.dF+= (dpv-S.dF)*Math.min(1,DT/1.0);                 // filtrert derivat på måling
+    const pP=P.kp*e, pD=-P.kp*P.td*S.dF;
+    let Inew=P.ti>0? S.I+P.kp*e*DT/P.ti : 0;
+    u=pP+Inew+pD;
+    if((u>100&&e>0)||(u<0&&e<0)) {Inew=S.I; u=pP+Inew+pD;} // anti-windup
+    S.I=P.ti>0?Inew:0;
+    u=Math.max(0,Math.min(100,u));
+  }
+  S.pvPrev=pv; S.u=u;
+  S.maOut=P.fault==='loop'?4+16*u/100:4+16*u/100;
+
+  // --- SSR og lampe
+  let V=ssrVolt(u);
+  if(P.fault==='ssr_open') V=0.2;
+  if(P.fault==='ssr_short') V=238.7;
+  S.V=V;
+  const pw=PMAX*Math.pow(V/230,1.55);
+  S.buf.push(pw); const pd=S.buf.shift();
+
+  thermal(pd);
+}
+
+// ---------- tegning
+function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function fit(c){const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1;if(c.width!==Math.round(r.width*d)||c.height!==Math.round(r.height*d)){c.width=Math.round(r.width*d);c.height=Math.round(r.height*d);}const x=c.getContext('2d');x.setTransform(d,0,0,d,0,0);return [x,r.width,r.height];}
+
+function drawTrend(){
+  const [x,w,h]=fit($('trend'));x.clearRect(0,0,w,h);
+  const L=38,Rm=36,T=8,B=24,pw=w-L-Rm,ph=h-T-B;
+  const fg=css('--muted'),line=css('--line');
+  x.font='12px '+css('--f-num');x.lineWidth=1;
+  const t1=Math.max(600,S.t),t0=t1-600;
+  const X=t=>L+(t-t0)/600*pw, Y=v=>T+ph-(v/150)*ph, Yu=v=>T+ph-(v/100)*ph;
+  x.strokeStyle=line;x.fillStyle=fg;x.textAlign='right';x.textBaseline='middle';
+  for(let v=0;v<=150;v+=25){x.globalAlpha=.6;x.beginPath();x.moveTo(L,Y(v));x.lineTo(L+pw,Y(v));x.stroke();x.globalAlpha=1;x.fillText(v,L-6,Y(v));}
+  x.textAlign='left';for(let v=0;v<=100;v+=25){x.fillStyle=css('--out');x.fillText(v,L+pw+6,Yu(v));}
+  x.fillStyle=fg;x.textAlign='center';x.textBaseline='top';
+  for(let m=Math.ceil(t0/60);m*60<=t1;m++){x.fillText(m+' min',X(m*60),T+ph+6);}
+  x.textAlign='left';x.textBaseline='top';x.fillText('°C',L+4,T+2);
+  x.textAlign='right';x.fillStyle=css('--out');x.fillText('%',L+pw-4,T+2);
+  const H=S.hist; if(H.length<2)return;
+  function path(idx,col,scale,width,dash){x.strokeStyle=col;x.lineWidth=width;x.setLineDash(dash||[]);x.beginPath();let st=false;for(const p of H){if(p[0]<t0)continue;const px=X(p[0]),py=scale(p[idx]);st?x.lineTo(px,py):(x.moveTo(px,py),st=true);}x.stroke();x.setLineDash([]);}
+  path(3,css('--out'),Yu,1.5);
+  path(1,css('--sp'),Y,2,[6,4]);
+  path(2,css('--pv'),Y,2.2);
+  const lp=H[H.length-1];x.fillStyle=css('--pv');x.beginPath();x.arc(X(lp[0]),Y(lp[2]),3.5,0,7);x.fill();
+}
+
+function drawSSR(){
+  const [x,w,h]=fit($('ssrChart'));x.clearRect(0,0,w,h);
+  const L=36,R=10,T=8,B=26,pw=w-L-R,ph=h-T-B;
+  const X=u=>L+u/100*pw,Y=v=>T+ph-v/250*ph;
+  x.font='11px '+css('--f-num');x.strokeStyle=css('--line');x.fillStyle=css('--muted');x.lineWidth=1;
+  x.textAlign='right';x.textBaseline='middle';
+  for(let v=0;v<=250;v+=50){x.beginPath();x.moveTo(L,Y(v));x.lineTo(L+pw,Y(v));x.stroke();x.fillText(v,L-5,Y(v));}
+  x.textAlign='center';x.textBaseline='top';for(let u=0;u<=100;u+=25)x.fillText(u,X(u),T+ph+5);
+  x.fillText('utgang %',L+pw/2,T+ph+15>h-12?h-12:T+ph+15);
+  x.strokeStyle=css('--heat');x.lineWidth=2;x.beginPath();SSR.forEach((p,i)=>i?x.lineTo(X(p[0]),Y(p[1])):x.moveTo(X(p[0]),Y(p[1])));x.stroke();
+  x.fillStyle=css('--heat');SSR.forEach(p=>{x.beginPath();x.arc(X(p[0]),Y(p[1]),3,0,7);x.fill();});
+  x.strokeStyle=css('--fg');x.lineWidth=2;x.beginPath();x.arc(X(S.u),Y(S.V),6,0,7);x.stroke();
+}
+
+const tb=$('ssrTbl');SSR.forEach(p=>{const tr=document.createElement('tr');tr.innerHTML='<td>'+p[0]+'</td><td>'+p[1].toString().replace('.',',')+'</td>';tb.appendChild(tr);});
+
+const f1=v=>v.toFixed(1).replace('.',',');
+const AV=['pv','u','V','T','Ts','R','maIn','maOut'];
+let acc2={n:0},disp=null,lastDisp=0,Vg=0,mmE={};
+function sampleDisp(now){
+  AV.forEach(k=>acc2[k]=(acc2[k]||0)+(isFinite(S[k])?S[k]:NaN));acc2.n++;
+  Vg+=(S.V-Vg)*0.15;
+  ['V','maIn','maOut','R'].forEach(k=>{const v=S[k];mmE[k]=(!isFinite(v)||mmE[k]==null||!isFinite(mmE[k])||Math.abs(v-mmE[k])>(k==='V'?15:k==='R'?5:1))?v:mmE[k]+(v-mmE[k])*0.03;}); // glødetråden har termisk treghet
+  if(!disp||now-lastDisp>=500){
+    const d={brk:S.brk,t:S.t,mm:Object.assign({},mmE)};AV.forEach(k=>d[k]=acc2.n?acc2[k]/acc2.n:S[k]);
+    if(!isFinite(d.R))d.R=Infinity;
+    disp=d;acc2={n:0};lastDisp=now;
+  }
+}
+function updateUI(){
+  const S=disp;
+  const on=P.power;
+  const pvTxt=!on?'':S.brk?(S.maIn>20?'S.br':'-  -'):f1(S.pv);
+  $('pvDisp').textContent=pvTxt;$('spDisp').textContent=on?f1(P.sp):'';
+  $('outTxt').textContent=f1(S.u)+' %';$('outBar').style.width=S.u+'%';
+  $('ledOut').classList.toggle('on',S.u>0.5);$('ledMan').classList.toggle('on',!auto);
+  const alarm=on&&(S.brk||S.pv>P.sp+15);$('ledAlm').classList.toggle('on',alarm);
+  $('faceMsg').textContent=!on?'STRØMLØS · SIKRING AV':S.brk?((P.fault==='loop'||P.fault==='psu24')?'SLØYFEBRUDD · OUT 0 %':'FØLERFEIL · OUT 0 %'):(S.pv>P.sp+15?'HØY TEMPERATUR':'');
+  $('kMode').setAttribute('aria-pressed',String(!auto));
+  $('dSP').textContent=f1(P.sp)+' °C';
+  $('dE').textContent=(!on||S.brk)?'—':(P.sp-S.pv>=0?'+':'')+f1(P.sp-S.pv)+' °C';
+  $('dU').textContent=f1(S.u)+' %';
+  $('dMAo').textContent=S.maOut.toFixed(2).replace('.',',')+' mA';
+  $('dV').textContent=Math.round(S.V)+' V';
+  $('dT').textContent=f1(S.T)+' °C';
+  $('dTs').textContent=f1(S.Ts)+' °C';
+  $('dR').textContent=isFinite(S.R)?f1(S.R)+' Ω':'∞ Ω';
+  $('dMAi').textContent=Math.max(0,S.maIn).toFixed(2).replace('.',',')+' mA';
+  $('dPV').textContent=!on?'—':S.brk?'feil':f1(S.pv)+' °C';
+  $('lampGlow').setAttribute('opacity',(S.V/238.7).toFixed(2));
+  const m=Math.floor(S.t/60),s=Math.floor(S.t%60);$('clock').textContent='Simulert tid '+m+':'+String(s).padStart(2,'0');
+  // riggen
+  $('rigPV').textContent=!on?'':S.brk?(S.maIn>20?'S.Err':'----'):f1(S.pv);
+  $('rigSV').textContent=on?Math.round(P.sp):'';
+  $('rigMV').textContent=on?f1(S.u):'';
+  $('rigLed').setAttribute('fill',on&&S.u>0.5?'#f0a032':'#333');
+  $('rigLedM').setAttribute('fill',on&&!auto?'#43e07e':'#333');
+  $('rigLedA').setAttribute('fill',alarm?'#ff4a3d':'#333');
+  const b=Math.pow(Math.max(0,Vg-20)/218.7,1.2);
+  $('rigGlow').setAttribute('opacity',Math.min(1,b*1.05).toFixed(3));
+  $('rigGlow').setAttribute('r',(160+100*b).toFixed(0));
+  $('rigGlowB').setAttribute('opacity',Math.min(1,b*1.1).toFixed(3));
+  $('rigLit').setAttribute('opacity',Math.min(1,b*1.15).toFixed(3));
+  const tw=Math.max(0,Math.min(1,(S.Ts-20)/110));
+  $('rigTip').setAttribute('fill','hsl('+(210-190*tw)+','+(10+60*tw)+'%,60%)');
+  $('ssrLed').setAttribute('fill',on&&S.u>1&&P.fault!=='ssr_open'?'hsl(140,80%,'+(30+30*S.u/100)+'%)':'#3a3f44');
+  $('psuLed').setAttribute('fill',on&&P.fault!=='psu24'?'#43e07e':'#2a2f33');
+  $('brkHandle').setAttribute('transform',on?'':'translate(0,22)');
+  $('brkFlag').setAttribute('fill',on?'#d8342c':'#2f9a3e');
+  const M=S.mm;
+  const mmv={V:[f1(M.V),'V AC'],Vssr:[f1(on?Math.sqrt(Math.max(0,238.7*238.7-M.V*M.V)):0),'V AC'],mao:[M.maOut.toFixed(2).replace('.',','),'mA DC'],mai:[Math.max(0,M.maIn).toFixed(2).replace('.',','),'mA DC'],R:[isFinite(M.R)?f1(M.R):'0L','Ω']}[mm];
+  $('mmVal').textContent=mmv[0];$('mmUnit').textContent=mmv[1];
+  $('rigInfo').textContent=(on?'':'Sikring AV · ')+'Pære '+Math.round(S.V)+' V · ca. '+Math.round(60*Math.pow(S.V/230,1.55))+' W · '+f1(S.T)+' °C ved pæra';
+  [...tb.rows].forEach(r=>r.classList.toggle('hit',Math.abs(+r.cells[0].textContent-S.u)<6));
+}
+
+let last=performance.now(),acc=0;
+function frame(now){
+  const dt=Math.min(0.1,(now-last)/1000);last=now;
+  if(running){acc+=dt*(+$('speed').value);let n=0;while(acc>=DT&&n<4000){step();acc-=DT;n++;}}
+  sampleDisp(now);updateUI();drawTrend();drawSSR();calUI(now);
+  requestAnimationFrame(frame);
+}
+
+// ---------- kontroller
+function bind(id,key,fmt,num=true){const el=$(id),o=$(id+'O');const f=()=>{P[key]=num?+el.value:el.value;if(o)o.textContent=fmt(P[key]);};el.addEventListener('input',f);f();}
+bind('sp','sp',v=>v+' °C');bind('kp','kp',v=>f1(v));
+bind('ti','ti',v=>v?v+' s':'av');bind('td','td',v=>v?v+' s':'av');
+bind('man','man',v=>v+' %');bind('amb','amb',v=>v+' °C');
+bind('noise','noise',v=>v.toFixed(2).replace('.',',')+' mA');bind('tauS','tauS',v=>v+' s');bind('filt','filt',v=>v?f1(v)+' s':'av');
+$('fan').addEventListener('change',e=>P.fan=e.target.checked);
+$('fault').addEventListener('change',e=>P.fault=e.target.value);
+function nudge(d){
+  if(!auto){const m=$('man');m.value=Math.max(0,Math.min(100,+m.value+d));m.dispatchEvent(new Event('input'));return;}
+  const el=$('sp');el.value=Math.max(0,Math.min(130,+el.value+d));el.dispatchEvent(new Event('input'));}
+function toggleMode(){auto=!auto;if(!auto){$('man').value=Math.round(S.u);$('man').dispatchEvent(new Event('input'));}}
+// knappene på regulatoren i tegningen: trykk = 1 steg, hold inne = gjentar
+function holdKey(id,d){
+  const el=$(id);let t1=null,t2=null;
+  const stop=()=>{clearTimeout(t1);clearInterval(t2);el.classList.remove('down');};
+  el.addEventListener('pointerdown',e=>{e.preventDefault();el.classList.add('down');nudge(d);
+    t1=setTimeout(()=>{t2=setInterval(()=>nudge(d),90);},450);});
+  ['pointerup','pointerleave','pointercancel'].forEach(ev=>el.addEventListener(ev,stop));
+  el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();nudge(d);}});
+}
+holdKey('rUp',1);holdKey('rDown',-1);
+$('rMode').addEventListener('click',toggleMode);
+$('rMode').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleMode();}});
+$('kUp').onclick=()=>nudge(1);$('kDown').onclick=()=>nudge(-1);
+$('kMode').onclick=toggleMode;
+$('bRun').onclick=()=>{running=!running;$('bRun').textContent=running?'Pause':'Fortsett';};
+$('bReset').onclick=()=>{reset();};
+$('bCopy').onclick=()=>{
+  const rows=['tid_s\tSP_C\tPV_C\tutgang_%\tlampe_V'];
+  S.hist.forEach(p=>rows.push([p[0].toFixed(1),p[1].toFixed(1),p[2].toFixed(2),p[3].toFixed(1),p[5].toFixed(1)].join('\t').replace(/\./g,',')));
+  const txt=rows.join('\n');
+  const done=m=>{$('toast').textContent=m;setTimeout(()=>$('toast').textContent='',3000);};
+  try{navigator.clipboard.writeText(txt).then(()=>done('Kopiert '+(rows.length-1)+' rader. Lim inn i Excel.'),()=>fallback());}catch(e){fallback();}
+  function fallback(){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done('Kopiert.');}catch(e){done('Kunne ikke kopiere automatisk.');}ta.remove();}
+};
+
+// ---------- PT-100, tilkobling og kalibrering
+const fx=(v,d)=>isFinite(v)?v.toFixed(d).replace('.',','):'—';
+(function(){let h='<thead><tr><th>°C</th>'+[...Array(10).keys()].map(i=>'<th>'+i+'</th>').join('')+'</tr></thead><tbody>';
+  for(let t=0;t<=110;t+=10){h+='<tr><td>'+t+'</td>';for(let i=0;i<10;i++)h+='<td data-t="'+(t+i)+'">'+fx(pt100(t+i),2)+'</td>';h+='</tr>';}
+  $('rtdTbl').innerHTML=h+'</tbody>';})();
+$('wire').addEventListener('change',e=>{P.wire=+e.target.value;drawPt();});
+$('sens').addEventListener('change',e=>{P.sens=e.target.value;if(P.sens==='new'){P.newA=gauss()*0.18;P.newB=gauss()*0.003;}});
+bind('rLead','rLead',v=>fx(v,2)+' Ω');bind('ins','ins',v=>(v>0?'+':'')+fx(v,1)+' °C');
+function setLoc(l){P.loc=l;document.querySelectorAll('[data-loc]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.loc===l)));}
+document.querySelectorAll('[data-loc]').forEach(b=>b.onclick=()=>setLoc(b.dataset.loc));
+$('bBath').onclick=()=>{P.bathC=Math.round((4+Math.random()*14)*10)/10;P.bathH=Math.round((35+Math.random()*25)*10)/10;$('fasitNote').textContent='Nye vannbad laget. Mål på nytt.';};
+function drawPt(){ // ledere fra gjennomføringen til FlexTop klemme 3–6
+  const H=[336,190],T={3:[482,118],4:[494,133],5:[494,147],6:[482,162]};
+  const plan=P.wire===2?[[3,'#c4302a'],[6,'#f2f2f2']]:P.wire===3?[[3,'#c4302a'],[4,'#c4302a'],[6,'#f2f2f2']]:[[3,'#c4302a'],[4,'#c4302a'],[5,'#f2f2f2'],[6,'#f2f2f2']];
+  let h='';plan.forEach(([k,c],i)=>{const t=T[k];h+='<path d="M'+H[0]+','+H[1]+' C'+(H[0]+40+i*8)+','+(H[1]+60)+' '+(t[0]+60)+','+(t[1]+40)+' '+t[0]+','+t[1]+'" stroke="'+c+'" stroke-width="3"/>';});
+  if(P.wire===2)h+='<path d="M482,118 L494,133 M494,147 L482,162" stroke="#d9a520" stroke-width="2.5"/>';
+  if(P.wire===3)h+='<path d="M494,147 L482,162" stroke="#d9a520" stroke-width="2.5"/>';
+  $('ptWires').innerHTML=h;}
+drawPt();
+function calTruth(T){const Rs=pt100(T)+sensDev(T),mes=Rs+2*P.rLead,tab=pt100(T);return {ref:T,tab,mes,dR:mes-tab,dT:invPt(mes)-T};}
+function num(id){const v=parseFloat(($(id).value||'').replace(',','.'));return isFinite(v)?v:null;}
+let fasitOn=false;
+function showFasit(){
+  const rows={c:calTruth(P.bathC),h:calTruth(P.bathH)},tol={ref:0.15,tab:0.03,mes:0.08,dR:0.1,dT:0.25};
+  document.querySelectorAll('.caltbl tr.fasit').forEach(r=>r.hidden=!fasitOn);
+  ['c','h'].forEach(k=>{const r=rows[k];
+    ['ref','tab','mes','dR','dT'].forEach(f=>{const d=f==='ref'?1:2;$('f_'+k+'_'+f).textContent=(f[0]==='d'&&r[f]>0?'+':'')+fx(r[f],d);
+      const el=$(k+'_'+f),v=num(k+'_'+f);el.classList.remove('ok','bad');if(fasitOn&&v!=null)el.classList.add(Math.abs(v-r[f])<=tol[f]?'ok':'bad');});});
+  if(fasitOn){const lead=2*P.rLead/0.385,mid=(rows.c.dT+rows.h.dT)/2;
+    $('fasitNote').textContent='Ledningene alene gir ca. '+fx(lead,1)+' °C for høy visning med 2-leder. Avviket endrer seg med temperaturen, så én INS-verdi retter bare opp feilen nær ett punkt. Snittet av de to avvikene er '+(mid>0?'+':'')+fx(mid,2)+' °C.';}
+  else $('fasitNote').textContent='';
+}
+$('bFasit').onclick=()=>{fasitOn=!fasitOn;$('bFasit').textContent=fasitOn?'Skjul fasit':'Vis fasit';showFasit();};
+$('bClear').onclick=()=>{document.querySelectorAll('.caltbl input').forEach(i=>{i.value='';i.classList.remove('ok','bad');});};
+document.querySelectorAll('.caltbl input').forEach(i=>i.addEventListener('input',()=>{if(fasitOn)showFasit();}));
+let lastCal=0;
+function calUI(now){
+  if(now-lastCal<500)return;lastCal=now;
+  const ref=P.loc==='cold'?P.bathC:P.loc==='hot'?P.bathH:null;
+  $('refVal').textContent=ref==null?'— — —':fx(ref,1)+' °C';
+  const Rs=S.Rs,Rl=2*P.rLead,Rft=P.wire===2?Rs+Rl:Rs;
+  $('ptRead').innerHTML='Element: <b>'+fx(Rs,2)+' Ω</b> ('+fx(S.Ts,1)+' °C)<br>FlexTop ser: <b>'+fx(Rft,2)+' Ω</b> → '+fx(invPt(Rft),1)+' °C<br>Feil fra ledninger: <b>'+(P.wire===2?'+'+fx(Rl/0.385,2):'0,00')+' °C</b><br>INS: <b>'+(P.ins>0?'+':'')+fx(P.ins,1)+' °C</b>';
+  document.querySelectorAll('#rtdTbl td.hl').forEach(td=>td.classList.remove('hl'));
+  if(ref!=null){const td=document.querySelector('#rtdTbl td[data-t="'+Math.floor(ref)+'"]');if(td)td.classList.add('hl');}
+  if(fasitOn)showFasit();
+}
+// rekkeklemmer bak på regulatoren (1–12 og 13–24)
+(function(){let h='';for(let i=0;i<12;i++){const y=85+i*19;
+  h+='<circle cx="805" cy="'+y+'" r="5.5" fill="#9da3a8" stroke="#5d646a"/><circle cx="855" cy="'+y+'" r="5.5" fill="#9da3a8" stroke="#5d646a"/>';
+  h+='<text x="818" y="'+(y+3)+'" font-size="7" fill="'+(i<4?'#ffd36b':'#7d8790')+'">'+(i+1)+'</text><text x="868" y="'+(y+3)+'" font-size="7" fill="'+(i>=9&&i<=10?'#ffd36b':'#7d8790')+'">'+(i+13)+'</text>';}
+  $('termCols').innerHTML=h;})();
+// multimeter: posisjon, ledninger og målepunkt
+let mm='V',view='front';
+const MM={front:[860,300,4],back:[22,330,-4]};
+const JACK={COM:[40,206],V:[70,206],mA:[100,206]};
+function jack(k){const m=MM[view],a=m[2]*Math.PI/180,p=JACK[k];return [m[0]+p[0]*Math.cos(a)-p[1]*Math.sin(a),m[1]+p[0]*Math.sin(a)+p[1]*Math.cos(a)];}
+const TGT={
+  front:{},
+  back:{V:[[602,482],[397,404],-45,'V'],Vssr:[[552,482],[602,482],-45,'V'],mao:[[552,380],[805,123],45,'mA'],mai:[[470,350],[497,350],45,'mA'],R:[[482,118],[482,162],-112,'V']}};
+const HINT={
+  V:'Spenning over lampa H1 måles parallelt mellom T1 på SSR og L2 på rekkeklemmen. Anlegget er IT-nett (L1/L2), ikke TN med nøytralleder. 230 V – kun med riktig utstyr og tillatelse.',
+  Vssr:'Spenning over SSR (L1–T1) er høy når SSR-en ikke leder og nær 0 V når den leder fullt. Den kan ikke legges direkte sammen med lampespenningen, fordi SSR-en styrer en del av hver halvperiode (RMS-verdier).',
+  front:'På forsiden er det ingen målepunkter. Sokkelen er bare skrudd fast i plata, og alle elektriske tilkoblinger sitter bak. Velg en måling for å gå til baksiden.',
+  mao:'Strøm måles i serie: bryt sløyfa mellom E5EC klemme 3 (+) og SSR A1+, og bruk mA-kontakten.',
+  mai:'Strøm måles i serie: åpne Wago-klemmen mellom FlexTop − og E5EC klemme 22 (+), og kople multimeteret inn der. Bruk mA-kontakten.',
+  R:'Motstand måles strømløst, med PT-100 koplet fra FlexTop (klemme 3 og 6). Ved 2-leder måler du element + begge lederne.'};
+function lead(j,t){return 'M'+j[0].toFixed(1)+','+j[1].toFixed(1)+' C'+j[0].toFixed(1)+','+(j[1]+50).toFixed(1)+' '+t[0]+','+Math.max(t[1]+160,520)+' '+t[0]+','+t[1];}
+function draw(){
+  const m=MM[view];$('mmG').setAttribute('transform','translate('+m[0]+','+m[1]+') rotate('+m[2]+')');
+  const gb=TGT.back[mm];
+  // forfra: samme instrument og samme måling, ledningene går bak plata til målepunktet på baksiden
+  const g=view==='back'?gb:[[851,318],[851,336],gb[2],gb[3]];
+  ['tipR','tipB'].forEach(id=>view==='back'?$(id).removeAttribute('hidden'):$(id).setAttribute('hidden',''));
+  const jr=jack(g[3]),jb=jack('COM');
+  $('leadR').setAttribute('d',lead(jr,g[0]));$('leadB').setAttribute('d',lead(jb,g[1]));
+  $('tipR').setAttribute('cx',g[0][0]);$('tipR').setAttribute('cy',g[0][1]);$('tipB').setAttribute('cx',g[1][0]);$('tipB').setAttribute('cy',g[1][1]);
+  $('mmPtr').setAttribute('transform','rotate('+g[2]+',70,148)');
+  $('rigHint').textContent=HINT[mm]+(view==='front'?' Målepunktet sitter på baksiden – ledningene går bak plata.':'');
+  document.querySelectorAll('[data-mm]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.mm===mm)));
+  document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===view)));
+  view==='front'?($('viewFront').removeAttribute('hidden'),$('viewBack').setAttribute('hidden','')):($('viewBack').removeAttribute('hidden'),$('viewFront').setAttribute('hidden',''));
+}
+function setMM(k){mm=k;draw();}
+function setView(v){view=v;draw();}
+document.querySelectorAll('[data-mm]').forEach(b=>b.onclick=()=>setMM(b.dataset.mm));
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>setView(b.dataset.view));
+function toggleBrk(){P.power=!P.power;if(P.power){S.pvPrev=null;}}
+$('brk').addEventListener('click',toggleBrk);
+$('brk').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleBrk();}});
+draw();
+requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
+</script>
+</body>
+</html>
